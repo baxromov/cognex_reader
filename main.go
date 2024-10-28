@@ -141,7 +141,7 @@ func main() {
 	http.HandleFunc("/ws", websocketHandler)
 	go handleTelnet()
 
-	log.Println("WebSocket server running on ws://localhost:8765")
+	log.Println("WebSocket server running on ws://0.0.0.0:8765")
 	if err := http.ListenAndServe(":8765", nil); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
