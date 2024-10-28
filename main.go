@@ -42,12 +42,12 @@ func websocketHandler(w http.ResponseWriter, r *http.Request) {
 	connectedClients[conn] = true
 	mu.Unlock()
 
-	// Set a pong handler to keep the connection alive
+	
 	conn.SetPongHandler(func(string) error {
-		return conn.SetReadDeadline(time.Now().Add(60 * time.Second)) // Reset deadline on pong
+		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	})
 
-	// Keep the connection open and read messages from the client
+	
 	for {
 		if _, _, err := conn.NextReader(); err != nil {
 			break
@@ -64,31 +64,31 @@ func handleTelnet() {
 	username := "admin"
 	password := ""
 
-	// Connect to the Telnet server
+	
 	conn, err := net.Dial("tcp", host)
 	if err != nil {
 		errorMessage := "Failed to connect to Telnet server: " + err.Error()
 		log.Println(errorMessage)
 		notifyClients(errorMessage)
-		return // Exit the function but keep the server running
+		return
 	}
 	defer conn.Close()
 
 	reader := bufio.NewReader(conn)
 
-	// Send login credentials
+
 	log.Println("Sending login credentials...")
 	if _, err := conn.Write([]byte(username + "\n")); err != nil {
 		errorMessage := "Failed to send username: " + err.Error()
 		log.Println(errorMessage)
 		notifyClients(errorMessage)
-		return // Exit the function but keep the server running
+		return
 	}
 	if _, err := conn.Write([]byte(password + "\n")); err != nil {
 		errorMessage := "Failed to send password: " + err.Error()
 		log.Println(errorMessage)
 		notifyClients(errorMessage)
-		return // Exit the function but keep the server running
+		return
 	}
 
 	// Read until login succeeds
@@ -97,14 +97,14 @@ func handleTelnet() {
 		if _, err := conn.Write([]byte(commandToSend)); err != nil {
 			log.Printf("Error sending command to Telnet: %v", err)
 			notifyClients("Error sending command to Telnet: " + err.Error())
-			return // Exit the function but keep the server running
+			return
 		}
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			errorMessage := "Error reading from Telnet: " + err.Error()
 			log.Println(errorMessage)
 			notifyClients(errorMessage)
-			return // Exit the function but keep the server running
+			return
 		}
 		log.Printf("Received from Telnet: %s", line)
 		if line == "Login succeeded\n" {
@@ -113,17 +113,16 @@ func handleTelnet() {
 			log.Println("Login failed or incomplete, received:", line)
 		}
 	
-		// Notify WebSocket clients about the login status
 		notifyClients(line)
 	}
 
-	// Send commands and handle responses
+	
 	for {
 		commandToSend := "+\n"
 		if _, err := conn.Write([]byte(commandToSend)); err != nil {
 			log.Printf("Error sending command to Telnet: %v", err)
 			notifyClients("Error sending command to Telnet: " + err.Error())
-			return // Exit the function but keep the server running
+			return
 		}
 
 		response, err := reader.ReadString('\n')
@@ -132,7 +131,6 @@ func handleTelnet() {
 		}
 		log.Printf("Received from Telnet: %s", response)
 
-		// Notify WebSocket clients
 		notifyClients(response)
 	}
 }
