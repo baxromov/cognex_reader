@@ -91,7 +91,6 @@ func handleTelnet() {
 		return
 	}
 
-	// Read until login succeeds
 	for {
 		commandToSend := "+\n"
 		if _, err := conn.Write([]byte(commandToSend)); err != nil {
