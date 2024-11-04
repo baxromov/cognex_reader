@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -15,12 +16,13 @@ var (
 	upgrader         = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	connectedClients = make(map[*websocket.Conn]bool)
 	mu               sync.Mutex
+	commandChannel   = make(chan string) // Channel to send commands to Telnet server
+	retryInterval    = 5 * time.Second
 )
 
 func notifyClients(message string) {
 	mu.Lock()
 	defer mu.Unlock()
-
 	for client := range connectedClients {
 		if err := client.WriteMessage(websocket.TextMessage, []byte(message)); err != nil {
 			log.Printf("Error sending message to client: %v", err)
@@ -42,14 +44,13 @@ func websocketHandler(w http.ResponseWriter, r *http.Request) {
 	connectedClients[conn] = true
 	mu.Unlock()
 
-	conn.SetPongHandler(func(string) error {
-		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	})
-
 	for {
-		if _, _, err := conn.NextReader(); err != nil {
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			log.Printf("Error reading message from client: %v", err)
 			break
 		}
+		commandChannel <- string(message) // Send command received from WebSocket to Telnet server
 	}
 
 	mu.Lock()
@@ -61,88 +62,66 @@ func handleTelnet() {
 	host := "192.168.1.197:23"
 	username := "admin"
 	password := ""
-	retryInterval := 5 * time.Second
 
-	var conn net.Conn
-	var err error
-
-	// Infinite retry loop until successful connection
 	for {
 		log.Println("Attempting to connect to Telnet server...")
 		notifyClients("Attempting to connect to Telnet server...")
 
-		conn, err = net.Dial("tcp", host)
+		conn, err := net.Dial("tcp", host)
 		if err != nil {
 			log.Printf("Failed to connect to Telnet server: %v. Retrying in %v...", err, retryInterval)
-			notifyClients("Failed to connect to Telnet server: " + err.Error() + ". Retrying...")
+			notifyClients("Failed to connect: " + err.Error())
 			time.Sleep(retryInterval)
 			continue
 		}
-		break // Break the loop once connected successfully
-	}
-	defer conn.Close()
+		defer conn.Close()
+		reader := bufio.NewReader(conn)
 
-	reader := bufio.NewReader(conn)
+		// Send credentials with delay to avoid missed prompts
+		time.Sleep(1 * time.Second)
+		fmt.Fprint(conn, username+"\n")
+		time.Sleep(1 * time.Second)
+		fmt.Fprint(conn, password+"\n")
 
-	log.Println("Sending login credentials...")
-	notifyClients("Sending login credentials...")
+		// Goroutine to continuously read responses
+		go func() {
+			for {
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					log.Println("Error reading response:", err)
+					notifyClients("Disconnected from Telnet. Attempting reconnect.")
+					break
+				}
+				log.Println("Received:", line)
+				notifyClients(line)
+			}
+		}()
 
-	// Send login credentials
-	if _, err := conn.Write([]byte(username + "\n")); err != nil {
-		errorMessage := "Failed to send username: " + err.Error()
-		log.Println(errorMessage)
-		notifyClients(errorMessage)
-		return
-	}
-	if _, err := conn.Write([]byte(password + "\n")); err != nil {
-		errorMessage := "Failed to send password: " + err.Error()
-		log.Println(errorMessage)
-		notifyClients(errorMessage)
-		return
-	}
-
-	// Check login response
-	for {
-		commandToSend := "+\n"
-		if _, err := conn.Write([]byte(commandToSend)); err != nil {
-			log.Printf("Error sending command to Telnet: %v", err)
-			notifyClients("Error sending command to Telnet: " + err.Error())
-			return
+		// Loop to send commands
+		for {
+			select {
+			case cmd := <-commandChannel:
+				log.Printf("Sending command: %s", cmd)
+				if _, err := conn.Write([]byte(cmd + "\n")); err != nil {
+					log.Printf("Error sending command: %v", err)
+					notifyClients("Failed to send command.")
+					break
+				}
+			case <-time.After(2 * time.Second): // Send "+" if idle
+				log.Println("Sending keep-alive command: +")
+				if _, err := conn.Write([]byte("+\n")); err != nil {
+					log.Printf("Error sending keep-alive: %v", err)
+					notifyClients("Disconnected, will retry.")
+					break
+				}
+			}
 		}
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			errorMessage := "Error reading from Telnet: " + err.Error()
-			log.Println(errorMessage)
-			notifyClients(errorMessage)
-			return
-		}
-		log.Printf("Received from Telnet: %s", line)
-		if line == "Login succeeded\n" {
-			break
-		} else {
-			log.Println("Login failed or incomplete, received:", line)
-		}
-		notifyClients(line)
-	}
-
-	// Main loop to interact with Telnet server
-	for {
-		commandToSend := "+\n"
-		if _, err := conn.Write([]byte(commandToSend)); err != nil {
-			log.Printf("Error sending command to Telnet: %v", err)
-			notifyClients("Error sending command to Telnet: " + err.Error())
-			return
-		}
-
-		response, err := reader.ReadString('\n')
-		if err != nil {
-			log.Fatalf("Error reading from Telnet: %v", err)
-		}
-		log.Printf("Received from Telnet: %s", response)
-
-		notifyClients(response)
+		// Close connection and retry if the goroutine exits
+		conn.Close()
+		time.Sleep(retryInterval)
 	}
 }
+
 func main() {
 	http.HandleFunc("/ws", websocketHandler)
 	go handleTelnet()
