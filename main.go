@@ -33,6 +33,13 @@ func notifyClients(message string) {
 }
 
 func websocketHandler(w http.ResponseWriter, r *http.Request) {
+	// Extract host from query parameters
+	host := r.URL.Query().Get("host")
+	if host == "" {
+		http.Error(w, "Missing \"host\" query parameter", http.StatusBadRequest)
+		return
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("Error upgrading connection: %v", err)
@@ -43,6 +50,9 @@ func websocketHandler(w http.ResponseWriter, r *http.Request) {
 	mu.Lock()
 	connectedClients[conn] = true
 	mu.Unlock()
+
+	// Start Telnet connection with the provided host
+	go handleTelnet(host)
 
 	for {
 		_, message, err := conn.ReadMessage()
@@ -58,73 +68,74 @@ func websocketHandler(w http.ResponseWriter, r *http.Request) {
 	mu.Unlock()
 }
 
-func handleTelnet() {
-	host := "192.168.1.197:23"
+func handleTelnet(host string) {
 	username := "admin"
 	password := ""
 
 	for {
-		log.Println("Attempting to connect to Telnet server...")
-		notifyClients("Attempting to connect to Telnet server...")
+		log.Printf("Attempting to connect to Telnet server at %s...", host)
+		notifyClients("Attempting to connect to Telnet server at " + host)
 
 		conn, err := net.Dial("tcp", host)
 		if err != nil {
 			log.Printf("Failed to connect to Telnet server: %v. Retrying in %v...", err, retryInterval)
 			notifyClients("Failed to connect: " + err.Error())
-			time.Sleep(retryInterval)
+			time.Sleep(retryInterval) // Wait before retrying
 			continue
 		}
-		defer conn.Close()
+
 		reader := bufio.NewReader(conn)
 
-		// Send credentials with delay to avoid missed prompts
+		// Send credentials to the Telnet server
 		time.Sleep(1 * time.Second)
 		fmt.Fprint(conn, username+"\n")
 		time.Sleep(1 * time.Second)
 		fmt.Fprint(conn, password+"\n")
 
-		// Goroutine to continuously read responses
+		// Create a channel to signal when the connection is closed
+		done := make(chan bool)
+
+		// Goroutine to continuously read data from the Telnet server
 		go func() {
+			defer close(done) // Signal that reading has stopped
 			for {
 				line, err := reader.ReadString('\n')
 				if err != nil {
-					log.Println("Error reading response:", err)
+					log.Println("Error reading response from Telnet:", err)
 					notifyClients("Disconnected from Telnet. Attempting reconnect.")
 					break
 				}
 				log.Println("Received:", line)
-				notifyClients(line)
+				notifyClients(line) // Broadcast the response to WebSocket clients
 			}
 		}()
 
-		// Loop to send commands
-		for {
-			select {
-			case cmd := <-commandChannel:
-				log.Printf("Sending command: %s", cmd)
-				if _, err := conn.Write([]byte(cmd + "\n")); err != nil {
-					log.Printf("Error sending command: %v", err)
-					notifyClients("Failed to send command.")
-					break
-				}
-			case <-time.After(2 * time.Second): // Send "+" if idle
-				log.Println("Sending keep-alive command: +")
-				if _, err := conn.Write([]byte("+\n")); err != nil {
-					log.Printf("Error sending keep-alive: %v", err)
-					notifyClients("Disconnected, will retry.")
-					break
+		// Monitor commands coming from WebSocket clients and send them to the Telnet server
+		go func() {
+			for {
+				select {
+				case <-done: // Stop sending commands if the connection is closed
+					return
+				case command := <-commandChannel: // Read a command from the WebSocket
+					_, err := fmt.Fprint(conn, command+"\n")
+					if err != nil {
+						log.Printf("Error sending command to Telnet server: %v", err)
+						return
+					}
 				}
 			}
-		}
-		// Close connection and retry if the goroutine exits
-		conn.Close()
-		time.Sleep(retryInterval)
+		}()
+
+		<-done       // Wait for the reader goroutine to signal disconnection
+		conn.Close() // Ensure the connection is closed
+		log.Println("Connection to Telnet server lost. Retrying...")
+		notifyClients("Disconnected. Retrying in 5 seconds...")
+		time.Sleep(retryInterval) // Wait before retrying
 	}
 }
 
 func main() {
 	http.HandleFunc("/ws", websocketHandler)
-	go handleTelnet()
 
 	log.Println("WebSocket server running on ws://0.0.0.0:8765")
 	if err := http.ListenAndServe(":8765", nil); err != nil {
