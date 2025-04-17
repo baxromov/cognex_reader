@@ -1,0 +1,21 @@
+go build -o seuic_reader main.go
+
+sudo mv seuic_reader /usr/local/bin/
+
+sudo groupadd seuicuser_group
+sudo useradd -r -s /bin/false -g seuicuser_group seuic_user
+
+sudo chown seuic_user:seuicuser_group /usr/local/bin/seuic_reader
+
+sudo nano /etc/systemd/system/seuic_reader.service
+[Service]
+ExecStart=/usr/local/bin/seuic_reader
+Restart=always
+RestartSec=5
+User=seuic_user
+Group=seuicuser_group
+KillSignal=SIGTERM
+
+sudo systemctl daemon-reload
+sudo systemctl enable seuic_reader.service
+sudo systemctl start seuic_reader.service
