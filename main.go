@@ -74,12 +74,12 @@ func handleTelnet(host string) {
 
 	for {
 		log.Printf("Attempting to connect to Telnet server at %s...", host)
-		notifyClients("Attempting to connect to Telnet server at " + host)
+		//notifyClients("Attempting to connect to Telnet server at " + host)
 
 		conn, err := net.Dial("tcp", host)
 		if err != nil {
 			log.Printf("Failed to connect to Telnet server: %v. Retrying in %v...", err, retryInterval)
-			notifyClients("Failed to connect: " + err.Error())
+			//notifyClients("Failed to connect: " + err.Error())
 			time.Sleep(retryInterval) // Wait before retrying
 			continue
 		}
@@ -102,7 +102,7 @@ func handleTelnet(host string) {
 				line, err := reader.ReadString('\n')
 				if err != nil {
 					log.Println("Error reading response from Telnet:", err)
-					notifyClients("Disconnected from Telnet. Attempting reconnect.")
+					//notifyClients("Disconnected from Telnet. Attempting reconnect.")
 					break
 				}
 				log.Println("Received:", line)
@@ -126,11 +126,11 @@ func handleTelnet(host string) {
 			}
 		}()
 
-		<-done       // Wait for the reader goroutine to signal disconnection
-		conn.Close() // Ensure the connection is closed
+		<-done
+		conn.Close()
 		log.Println("Connection to Telnet server lost. Retrying...")
-		notifyClients("Disconnected. Retrying in 5 seconds...")
-		time.Sleep(retryInterval) // Wait before retrying
+		//notifyClients("Disconnected. Retrying in 5 seconds...")
+		time.Sleep(retryInterval)
 	}
 }
 
