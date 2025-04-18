@@ -69,8 +69,8 @@ func websocketHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleTelnet(host string) {
-	username := "admin"
-	password := ""
+	//username := "admin"
+	//password := ""
 
 	for {
 		log.Printf("Attempting to connect to Telnet server at %s...", host)
@@ -87,10 +87,10 @@ func handleTelnet(host string) {
 		reader := bufio.NewReader(conn)
 
 		// Send credentials to the Telnet server
-		time.Sleep(1 * time.Second)
-		fmt.Fprint(conn, username+"\n")
-		time.Sleep(1 * time.Second)
-		fmt.Fprint(conn, password+"\n")
+		//time.Sleep(1 * time.Second)
+		//fmt.Fprint(conn, username+"\n")
+		//time.Sleep(1 * time.Second)
+		//fmt.Fprint(conn, password+"\n")
 
 		// Create a channel to signal when the connection is closed
 		done := make(chan bool)
