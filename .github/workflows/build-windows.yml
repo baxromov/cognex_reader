@@ -22,14 +22,14 @@ jobs:
         with:
           go-version: 1.24 # Specify your Go version
 
-      # Step 3: Build Windows executable
+      # Step 3: Build the Windows executable
       - name: Build for Windows
         run: |
-          # Set environmental variables for Windows build
+          # Set environment variables for Windows build
           env GOOS=windows GOARCH=amd64 go build -o output/app.exe
 
-      # Step 4: Upload artifact (optional)
-      - name: Upload artifact
+      # Step 4: Upload artifact (Fixing `upload-artifact` issue)
+      - name: Upload built Windows executable
         uses: actions/upload-artifact@v3
         with:
           name: windows-executable
