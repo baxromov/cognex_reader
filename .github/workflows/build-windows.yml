@@ -30,7 +30,7 @@ jobs:
 
       # Step 4: Upload artifact (Fixing `upload-artifact` issue)
       - name: Upload built Windows executable
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         with:
           name: windows-executable
           path: output/app.exe
