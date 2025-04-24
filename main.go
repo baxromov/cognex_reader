@@ -6,6 +6,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -149,9 +151,16 @@ func handleTelnet(host string) {
 
 func main() {
 	http.HandleFunc("/ws", websocketHandler)
+	_, filename, _, _ := runtime.Caller(0)
+	absPath, err := filepath.Abs(filename)
+	if err != nil {
+		panic(err)
+	}
+	parentDir := filepath.Dir(absPath)
 
+	fmt.Println("Grandparent Directory:", parentDir)
 	log.Println("WebSocket server running on ws://localhost:8765")
-	if err := http.ListenAndServeTLS(":8765", "ssl/server.crt", "ssl/server.key", nil); err != nil {
+	if err := http.ListenAndServeTLS(":8765", filepath.Join(parentDir, "ssl/server.crt"), filepath.Join(parentDir, "ssl/server.key"), nil); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }
