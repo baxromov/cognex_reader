@@ -39,9 +39,9 @@ sudo systemctl start seuic_reader.service
    sudo nano /etc/nginx/sites-enabled/seuic_websocket
 
 
-   server {
-          # Listen on port 8765 for secure WebSocket connections
-          listen 8765 ssl;
+      server {
+          # Listen on port 8443 for secure WebSocket connections
+          listen 8443 ssl;
           server_name 172.20.163.201;
 
           # SSL certificate and key paths
@@ -55,16 +55,15 @@ sudo systemctl start seuic_reader.service
 
           # Configure WebSocket proxying
           location / {
-              proxy_pass http://127.0.0.1:8765; # Redirect traffic to your WebSocket server
-              proxy_http_version 1.1; # WebSocket support requires HTTP/1.1
-              proxy_set_header Upgrade $http_upgrade; # Handle WebSocket upgrade request
+              proxy_pass http://127.0.0.1:8765; # Proxy to existing WebSocket service
+              proxy_http_version 1.1;
+              proxy_set_header Upgrade $http_upgrade;
               proxy_set_header Connection "Upgrade";
-              proxy_set_header Host $host; # Forward client's Host header
-              proxy_set_header X-Real-IP $remote_addr; # Forward real client IP
+              proxy_set_header Host $host;
+              proxy_set_header X-Real-IP $remote_addr;
               proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
               proxy_set_header X-Forwarded-Proto $scheme;
 
-              # Timeout settings for long-running WebSocket connections
               proxy_read_timeout 3600s;
               proxy_send_timeout 3600s;
               proxy_connect_timeout 3600s;
@@ -82,3 +81,5 @@ sudo systemctl start seuic_reader.service
 
     sudo tail -f /var/log/nginx/error.log
     sudo tail -f /var/log/nginx/access.log
+
+    sudo netstat -tuln | grep 8443
