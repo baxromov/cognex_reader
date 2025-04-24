@@ -169,7 +169,6 @@ func main() {
 	tlsConfig := &tls.Config{
 		MinVersion:               tls.VersionTLS12,
 		PreferServerCipherSuites: true,
-		InsecureSkipVerify:       true, // Only for development/testing
 	}
 
 	server := &http.Server{
