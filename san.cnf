@@ -11,10 +11,10 @@
    ST = Tashkent
    L  = Tashkent
    O  = MyOrganization
-   CN = 192.168.0.101
+   CN = 172.20.163.201
 
    [req_ext]
    subjectAltName = @alt_names
 
    [alt_names]
-   IP.1 = 192.168.0.101
+   IP.1 = 172.20.163.201
