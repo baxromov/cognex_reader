@@ -22,72 +22,71 @@ sudo systemctl start seuic_reader.service
 
 
 ====================================================
- openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-     -keyout server.key -out server.crt -config san.cnf
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+    -keyout server.key -out server.crt \
+    -subj "/CN=172.20.163.201" \
+    -addext "subjectAltName = IP:172.20.163.201"
 
 ====================================================
-  openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-       -keyout privkey.pem -out fullchain.pem \
-       -subj "/CN=172.20.163.201"
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+     -keyout privkey.pem -out fullchain.pem \
+     -subj "/CN=172.20.163.201" \
+     -addext "subjectAltName = IP:172.20.163.201"
 
 
-  sudo mkdir -p /etc/nginx/ssl
-     sudo mv privkey.pem /etc/nginx/ssl/
-     sudo mv fullchain.pem /etc/nginx/ssl/
+sudo mkdir -p /etc/nginx/ssl
+sudo mv privkey.pem /etc/nginx/ssl/
+sudo mv fullchain.pem /etc/nginx/ssl/
 
 
-  sudo chmod 700 /etc/nginx/ssl
-     sudo chmod 600 /etc/nginx/ssl/*
-     sudo chown -R root:root /etc/nginx/ssl
+sudo chmod 700 /etc/nginx/ssl
+sudo chmod 600 /etc/nginx/ssl/*
+sudo chown -R root:root /etc/nginx/ssl
 
 
-   sudo nano /etc/nginx/sites-enabled/seuic_websocket
+sudo nano /etc/nginx/sites-enabled/seuic_websocket
 
 
-      server {
-          # Listen on port 8443 for secure WebSocket connections
-          listen 8443 ssl;
-          server_name 172.20.163.201;
+server {
+    listen 8443 ssl;
+    server_name 172.20.163.201;
 
-          # SSL certificate and key paths
-          ssl_certificate /etc/nginx/ssl/fullchain.pem;
-          ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+    ssl_certificate /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
 
-          # SSL security settings (optional but recommended)
-          ssl_protocols TLSv1.2 TLSv1.3;
-          ssl_ciphers HIGH:!aNULL:!MD5;
-          ssl_prefer_server_ciphers on;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
 
-          # Configure WebSocket proxying
-          location / {
-              proxy_pass http://127.0.0.1:8765; # Proxy to existing WebSocket service
-              proxy_http_version 1.1;
-              proxy_set_header Upgrade $http_upgrade;
-              proxy_set_header Connection "Upgrade";
-              proxy_set_header Host $host;
-              proxy_set_header X-Real-IP $remote_addr;
-              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-              proxy_set_header X-Forwarded-Proto $scheme;
+    location /ws {
+        proxy_pass http://127.0.0.1:8765;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
 
-              proxy_read_timeout 3600s;
-              proxy_send_timeout 3600s;
-              proxy_connect_timeout 3600s;
-          }
-      }
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_connect_timeout 3600s;
+    }
+}
 
 
-    sudo nginx -t
+sudo nginx -t
 
 
-    sudo systemctl reload nginx
+sudo systemctl reload nginx
 
 
-    sudo systemctl restart nginx
+sudo systemctl restart nginx
 
-    sudo tail -f /var/log/nginx/error.log
-    sudo tail -f /var/log/nginx/access.log
+sudo tail -f /var/log/nginx/error.log
+sudo tail -f /var/log/nginx/access.log
 
-    sudo netstat -tuln | grep 8443
+sudo netstat -tuln | grep 8443
 
 
 sudo chown seuic_user:seuicuser_group ssl/server.crt
