@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"crypto/tls"
 	"fmt"
 	"log"
 	"net"
@@ -159,8 +160,24 @@ func main() {
 	parentDir := filepath.Dir(absPath)
 
 	fmt.Println("Grandparent Directory:", parentDir)
-	log.Println("WebSocket server running on ws://localhost:8765")
-	if err := http.ListenAndServeTLS(":8765", filepath.Join(parentDir, "ssl/server.crt"), filepath.Join(parentDir, "ssl/server.key"), nil); err != nil {
+	log.Println("WebSocket server running on wss://localhost:8765")
+
+	certFile := filepath.Join(parentDir, "ssl/server.crt")
+	keyFile := filepath.Join(parentDir, "ssl/server.key")
+
+	// Configure TLS
+	tlsConfig := &tls.Config{
+		MinVersion:               tls.VersionTLS12,
+		PreferServerCipherSuites: true,
+		InsecureSkipVerify:       true, // Only for development/testing
+	}
+
+	server := &http.Server{
+		Addr:      ":8765",
+		TLSConfig: tlsConfig,
+	}
+
+	if err := server.ListenAndServeTLS(certFile, keyFile); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }
