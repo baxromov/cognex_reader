@@ -2,13 +2,10 @@ package main
 
 import (
 	"bufio"
-	"crypto/tls"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
-	"path/filepath"
-	"runtime"
 	"sync"
 	"time"
 
@@ -16,11 +13,7 @@ import (
 )
 
 var (
-	upgrader = websocket.Upgrader{
-		CheckOrigin:       func(r *http.Request) bool { return true },
-		EnableCompression: true,
-		HandshakeTimeout:  10 * time.Second,
-	}
+	upgrader         = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	connectedClients = make(map[*websocket.Conn]bool)
 	mu               sync.Mutex
 	commandChannel   = make(chan string) // Channel to send commands to Telnet server
@@ -40,15 +33,6 @@ func notifyClients(message string) {
 }
 
 func websocketHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-
-	if r.Method == "OPTIONS" {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
 	// Extract host from query parameters
 	host := r.URL.Query().Get("host")
 	if host == "" {
@@ -152,31 +136,9 @@ func handleTelnet(host string) {
 
 func main() {
 	http.HandleFunc("/ws", websocketHandler)
-	_, filename, _, _ := runtime.Caller(0)
-	absPath, err := filepath.Abs(filename)
-	if err != nil {
-		panic(err)
-	}
-	parentDir := filepath.Dir(absPath)
 
-	fmt.Println("Grandparent Directory:", parentDir)
-	log.Println("WebSocket server running on wss://localhost:8765")
-
-	certFile := "/etc/nginx/ssl/fullchain.pem"
-	keyFile := "/etc/nginx/ssl/privkey.pem"
-
-	// Configure TLS
-	tlsConfig := &tls.Config{
-		MinVersion:               tls.VersionTLS12,
-		PreferServerCipherSuites: true,
-	}
-
-	server := &http.Server{
-		Addr:      ":8765",
-		TLSConfig: tlsConfig,
-	}
-
-	if err := server.ListenAndServeTLS(certFile, keyFile); err != nil {
+	log.Println("WebSocket server running on ws://0.0.0.0:8765")
+	if err := http.ListenAndServe(":8765", nil); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }
