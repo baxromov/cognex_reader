@@ -90,8 +90,4 @@ sudo systemctl start seuic_reader.service
     sudo netstat -tuln | grep 8443
 
 
-sudo ufw status
-sudo ufw allow 8443/tcp
-sudo ufw allow 8765/tcp
-sudo ufw reload
-sudo ufw status
+sudo chown seuic_user:seuicuser_group ssl/server.crt
