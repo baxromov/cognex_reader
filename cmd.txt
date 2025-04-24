@@ -20,6 +20,65 @@ sudo systemctl daemon-reload
 sudo systemctl enable seuic_reader.service
 sudo systemctl start seuic_reader.service
 
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-   -keyout privkey.pem -out fullchain.pem \
-   -subj "/CN=172.20.163.201"
+====================================================
+  openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+       -keyout privkey.pem -out fullchain.pem \
+       -subj "/CN=172.20.163.201"
+
+
+  sudo mkdir -p /etc/nginx/ssl
+     sudo mv privkey.pem /etc/nginx/ssl/
+     sudo mv fullchain.pem /etc/nginx/ssl/
+
+
+  sudo chmod 700 /etc/nginx/ssl
+     sudo chmod 600 /etc/nginx/ssl/*
+     sudo chown -R root:root /etc/nginx/ssl
+
+
+   sudo nano /etc/nginx/sites-enabled/seuic_websocket
+
+
+   server {
+          # Listen on port 8765 for secure WebSocket connections
+          listen 8765 ssl;
+          server_name 172.20.163.201;
+
+          # SSL certificate and key paths
+          ssl_certificate /etc/nginx/ssl/fullchain.pem;
+          ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+
+          # SSL security settings (optional but recommended)
+          ssl_protocols TLSv1.2 TLSv1.3;
+          ssl_ciphers HIGH:!aNULL:!MD5;
+          ssl_prefer_server_ciphers on;
+
+          # Configure WebSocket proxying
+          location / {
+              proxy_pass http://127.0.0.1:8765; # Redirect traffic to your WebSocket server
+              proxy_http_version 1.1; # WebSocket support requires HTTP/1.1
+              proxy_set_header Upgrade $http_upgrade; # Handle WebSocket upgrade request
+              proxy_set_header Connection "Upgrade";
+              proxy_set_header Host $host; # Forward client's Host header
+              proxy_set_header X-Real-IP $remote_addr; # Forward real client IP
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $scheme;
+
+              # Timeout settings for long-running WebSocket connections
+              proxy_read_timeout 3600s;
+              proxy_send_timeout 3600s;
+              proxy_connect_timeout 3600s;
+          }
+      }
+
+
+    sudo nginx -t
+
+
+    sudo systemctl reload nginx
+
+
+    sudo systemctl restart nginx
+
+    sudo tail -f /var/log/nginx/error.log
+    sudo tail -f /var/log/nginx/access.log
