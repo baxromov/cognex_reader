@@ -13,7 +13,11 @@ import (
 )
 
 var (
-	upgrader         = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	upgrader = websocket.Upgrader{
+		CheckOrigin:       func(r *http.Request) bool { return true },
+		EnableCompression: true,
+		HandshakeTimeout:  10 * time.Second,
+	}
 	connectedClients = make(map[*websocket.Conn]bool)
 	mu               sync.Mutex
 	commandChannel   = make(chan string) // Channel to send commands to Telnet server
@@ -33,6 +37,15 @@ func notifyClients(message string) {
 }
 
 func websocketHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	// Extract host from query parameters
 	host := r.URL.Query().Get("host")
 	if host == "" {
@@ -137,8 +150,8 @@ func handleTelnet(host string) {
 func main() {
 	http.HandleFunc("/ws", websocketHandler)
 
-	log.Println("WebSocket server running on ws://0.0.0.0:8765")
-	if err := http.ListenAndServe(":8765", nil); err != nil {
+	log.Println("WebSocket server running on ws://localhost:8765")
+	if err := http.ListenAndServeTLS(":8765", "ssl/server.crt", "ssl/server.key", nil); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }
