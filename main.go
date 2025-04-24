@@ -162,8 +162,8 @@ func main() {
 	fmt.Println("Grandparent Directory:", parentDir)
 	log.Println("WebSocket server running on wss://localhost:8765")
 
-	certFile := filepath.Join(parentDir, "ssl/server.crt")
-	keyFile := filepath.Join(parentDir, "ssl/server.key")
+	certFile := "/etc/nginx/ssl/fullchain.pem"
+	keyFile := "/etc/nginx/ssl/privkey.pem"
 
 	// Configure TLS
 	tlsConfig := &tls.Config{
