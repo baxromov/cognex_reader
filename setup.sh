@@ -3,7 +3,8 @@
 set -e  # Exit immediately if a command exits with a non-zero status
 
 # Define variables
-SERVER_IP="172.20.163.201"  # Replace with your server's actual IP address
+#SERVER_IP="172.20.163.201"  Michigan
+SERVER_IP="192.168.0.113"  # Mike's PC
 SERVICE_NAME="seuic_reader"
 SYSTEMD_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 NGINX_CONF="/etc/nginx/sites-enabled/seuic_websocket"
