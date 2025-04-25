@@ -57,7 +57,7 @@ sudo cp /etc/nginx/ssl/server.crt /usr/local/share/ca-certificates/
           ssl_certificate     /etc/nginx/ssl/fullchain.pem;
           ssl_certificate_key /etc/nginx/ssl/privkey.pem;
 
-          location /ws/ {
+          location / {
               proxy_pass http://localhost:8765/;
               proxy_http_version 1.1;
               proxy_set_header Upgrade $http_upgrade;
@@ -77,12 +77,3 @@ sudo cp /etc/nginx/ssl/server.crt /usr/local/share/ca-certificates/
 
     sudo tail -f /var/log/nginx/error.log
     sudo tail -f /var/log/nginx/access.log
-
-    sudo netstat -tuln | grep 8443
-
-
-sudo ufw status
-sudo ufw allow 8443/tcp
-sudo ufw allow 8765/tcp
-sudo ufw reload
-sudo ufw status
