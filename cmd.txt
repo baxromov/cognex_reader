@@ -2,7 +2,7 @@ go build -o seuic_reader main.go
 
 sudo mv seuic_reader /usr/local/bin/
 
-sudo groupadd seuicuser_group
+sudo groupadd seuicuser_group 
 sudo useradd -r -s /bin/false -g seuicuser_group seuic_user
 
 sudo chown seuic_user:seuicuser_group /usr/local/bin/seuic_reader
@@ -20,32 +20,22 @@ sudo systemctl daemon-reload
 sudo systemctl enable seuic_reader.service
 sudo systemctl start seuic_reader.service
 
+# Install certbot
+sudo apt update
+sudo apt install certbot python3-certbot-nginx
 
-====================================================
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-    -keyout server.key -out server.crt \
-    -subj "/CN=172.20.163.201" \
-    -addext "subjectAltName = IP:172.20.163.201"
-
-====================================================
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-     -keyout privkey.pem -out fullchain.pem \
-     -subj "/CN=172.20.163.201" \
-     -addext "subjectAltName = IP:172.20.163.201"
-
+# Get SSL certificate with certbot
+sudo certbot --nginx -d 172.20.163.201 --agree-tos --email admin@example.com
 
 sudo mkdir -p /etc/nginx/ssl
-sudo mv privkey.pem /etc/nginx/ssl/
-sudo mv fullchain.pem /etc/nginx/ssl/
-
+sudo ln -s /etc/letsencrypt/live/172.20.163.201/fullchain.pem /etc/nginx/ssl/fullchain.pem
+sudo ln -s /etc/letsencrypt/live/172.20.163.201/privkey.pem /etc/nginx/ssl/privkey.pem
 
 sudo chmod 700 /etc/nginx/ssl
 sudo chmod 600 /etc/nginx/ssl/*
 sudo chown -R root:root /etc/nginx/ssl
 
-
 sudo nano /etc/nginx/sites-enabled/seuic_websocket
-
 
 server {
     listen 8443 ssl;
@@ -74,12 +64,9 @@ server {
     }
 }
 
-
 sudo nginx -t
 
-
 sudo systemctl reload nginx
-
 
 sudo systemctl restart nginx
 
@@ -88,5 +75,5 @@ sudo tail -f /var/log/nginx/access.log
 
 sudo netstat -tuln | grep 8443
 
-
-sudo chown seuic_user:seuicuser_group ssl/server.crt
+# Configure auto-renewal
+sudo certbot renew --dry-run
