@@ -8,6 +8,9 @@ SERVER_IP="192.168.0.113"  # Mike's PC
 SERVICE_NAME="seuic_reader"
 SYSTEMD_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 NGINX_CONF="/etc/nginx/sites-available/seuic_websocket"
+if [[ -f "/etc/nginx/sites-enabled/seuic_websocket" ]]; then
+    sudo rm /etc/nginx/sites-enabled/seuic_websocket
+fi
 sudo ln -s /etc/nginx/sites-available/seuic_websocket /etc/nginx/sites-enabled/
 # Check if the service already exists
 if systemctl list-units --full -all | grep -Fq "${SERVICE_NAME}.service"; then
@@ -88,9 +91,12 @@ else
 fi
 
 # Configure NGINX if the config file doesn't exist
-if [[ ! -f $NGINX_CONF ]]; then
-    echo "Configuring NGINX..."
-    sudo bash -c "cat > $NGINX_CONF" <<EOF
+if [[ -f $NGINX_CONF ]]; then
+    sudo rm $NGINX_CONF
+fi
+
+echo "Configuring NGINX..."
+sudo bash -c "cat > $NGINX_CONF" <<EOF
 server {
     listen 443 ssl;
     server_name ${SERVER_IP};
@@ -107,15 +113,12 @@ server {
     }
 }
 EOF
-    # Testing and reloading NGINX
-    echo "Testing NGINX configuration..."
-    sudo nginx -t
-    echo "Reloading NGINX..."
-    sudo systemctl reload nginx
-    sudo systemctl restart nginx
-else
-    echo "NGINX configuration already exists. Skipping NGINX configuration."
-fi
+# Testing and reloading NGINX
+echo "Testing NGINX configuration..."
+sudo nginx -t
+echo "Reloading NGINX..."
+sudo systemctl reload nginx
+sudo systemctl restart nginx
 
 # Tailing NGINX logs
 echo "Tailing NGINX logs (exit with Ctrl+C)..."
