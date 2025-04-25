@@ -51,33 +51,18 @@ sudo cp /etc/nginx/ssl/server.crt /usr/local/share/ca-certificates/
 
 
       server {
-          # Listen on port 8443 for secure WebSocket connections
-          listen 8443 ssl;
+          listen 443 ssl;
           server_name 172.20.163.201;
 
-          # SSL certificate and key paths
-          ssl_certificate /etc/nginx/ssl/fullchain.pem;
+          ssl_certificate     /etc/nginx/ssl/fullchain.pem;
           ssl_certificate_key /etc/nginx/ssl/privkey.pem;
 
-          # SSL security settings (optional but recommended)
-          ssl_protocols TLSv1.2 TLSv1.3;
-          ssl_ciphers HIGH:!aNULL:!MD5;
-          ssl_prefer_server_ciphers on;
-
-          # Configure WebSocket proxying
-          location / {
-              proxy_pass http://127.0.0.1:8765; # Proxy to existing WebSocket service
+          location /ws/ {
+              proxy_pass http://localhost:8765/;
               proxy_http_version 1.1;
               proxy_set_header Upgrade $http_upgrade;
-              proxy_set_header Connection "Upgrade";
+              proxy_set_header Connection "upgrade";
               proxy_set_header Host $host;
-              proxy_set_header X-Real-IP $remote_addr;
-              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-              proxy_set_header X-Forwarded-Proto $scheme;
-
-              proxy_read_timeout 3600s;
-              proxy_send_timeout 3600s;
-              proxy_connect_timeout 3600s;
           }
       }
 
