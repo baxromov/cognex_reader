@@ -7,8 +7,8 @@ set -e  # Exit immediately if a command exits with a non-zero status
 SERVER_IP="192.168.0.113"  # Mike's PC
 SERVICE_NAME="seuic_reader"
 SYSTEMD_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
-NGINX_CONF="/etc/nginx/sites-enabled/seuic_websocket"
-
+NGINX_CONF="/etc/nginx/sites-available/seuic_websocket"
+sudo ln -s /etc/nginx/sites-available/seuic_websocket /etc/nginx/sites-enabled/
 # Check if the service already exists
 if systemctl list-units --full -all | grep -Fq "${SERVICE_NAME}.service"; then
     echo "Service '${SERVICE_NAME}' already exists. Skipping service setup."
