@@ -25,6 +25,7 @@ type WebSocketMessage struct {
 type TelnetHandler struct {
 	telnetAddress   string
 	websocketConn   *websocket.Conn
+	logsConn        *websocket.Conn
 	stopSignal      chan struct{}
 	telnetConnected bool
 	wg              sync.WaitGroup
@@ -50,11 +51,26 @@ func ConnectWebSocket(channel string) (*websocket.Conn, error) {
 	return conn, nil
 }
 
+func (handler *TelnetHandler) sendError(errMsg string) {
+	if handler.logsConn != nil {
+		handler.logsConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		jsonMsg, err := json.Marshal(WebSocketMessage{Error: errMsg})
+		if err != nil {
+			log.Printf("Error marshaling error message: %v", err)
+			return
+		}
+		err = handler.logsConn.WriteMessage(websocket.TextMessage, jsonMsg)
+		if err != nil {
+			log.Printf("Error sending error message: %v", err)
+		}
+	}
+}
+
 func (handler *TelnetHandler) sendToWebSocket(message WebSocketMessage) {
 	handler.mu.Lock()
 	defer handler.mu.Unlock()
 
-	if handler.websocketConn != nil {
+	if handler.websocketConn != nil && message.Data != "" {
 		handler.websocketConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 		jsonMsg, err := json.Marshal(message)
 		if err != nil {
@@ -65,6 +81,8 @@ func (handler *TelnetHandler) sendToWebSocket(message WebSocketMessage) {
 		if err != nil {
 			log.Printf("Error sending message to WebSocket: %v", err)
 		}
+	} else if message.Error != "" {
+		handler.sendError(message.Error)
 	}
 }
 
@@ -156,6 +174,12 @@ func (handler *TelnetHandler) Stop() {
 		log.Println("WebSocket connection closed.")
 	}
 
+	if handler.logsConn != nil {
+		handler.logsConn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+		handler.logsConn.Close()
+		log.Println("Logs WebSocket connection closed.")
+	}
+
 	log.Println("Service stopped successfully.")
 }
 
@@ -173,9 +197,17 @@ func main() {
 	}
 	log.Printf("Connected to WebSocket channel: %s", channelName)
 
+	logsConn, err := ConnectWebSocket(channelName + "/logs")
+	if err != nil {
+		log.Printf("Failed to connect to logs WebSocket: %v", err)
+	} else {
+		log.Printf("Connected to logs WebSocket channel: %s/logs", channelName)
+	}
+
 	handler := &TelnetHandler{
 		telnetAddress: telnetAddress,
 		websocketConn: websocketConn,
+		logsConn:      logsConn,
 	}
 
 	handler.Start()
