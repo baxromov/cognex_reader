@@ -119,9 +119,9 @@ console.log('Channel connection closed:', event.reason);
 To test the WebSocket-Telnet Bridge using `curl`, you can establish a WebSocket connection as follows:
 
 ```shell script
-curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" -H "Host: example.com" \
+curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" -H "Host: 0.0.0.0:5001" \
 -H "Origin: http://0.0.0.0:5001" \
---http1.1 ws://0.0.0.0:5001
+--http1.1 ws://0.0.0.0:5001/mychannel?host=telnet.example.com:23
 ```
 
 
