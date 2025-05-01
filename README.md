@@ -85,8 +85,6 @@ Here’s an example of how to connect and use the WebSocket-Telnet Bridge with *
 ### Using JavaScript WebSocket Client
 This script demonstrates how to establish a WebSocket connection and exchange data with the WebSocket-Telnet Bridge.
 ```javascript
-
-
 // Connect to the WebSocket server with channel name and telnet host
 const socket = new WebSocket('ws://0.0.0.0:5001/mychannel?host=telnet.example.com:23');
 
