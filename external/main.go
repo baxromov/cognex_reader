@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
 	"time"
@@ -29,7 +30,8 @@ type TelnetHandler struct {
 	stopSignal      chan struct{}
 	telnetConnected bool
 	wg              sync.WaitGroup
-	mu              sync.Mutex
+	dataMu          sync.Mutex
+	logMu           sync.Mutex
 }
 
 func ConnectWebSocket(channel string) (*websocket.Conn, error) {
@@ -47,13 +49,12 @@ func ConnectWebSocket(channel string) (*websocket.Conn, error) {
 
 	conn.SetReadLimit(512)
 	conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-
 	return conn, nil
 }
 
 func (handler *TelnetHandler) sendError(errMsg string) {
-	handler.mu.Lock()
-	defer handler.mu.Unlock()
+	handler.logMu.Lock()
+	defer handler.logMu.Unlock()
 
 	if handler.logsConn != nil {
 		handler.logsConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
@@ -71,20 +72,22 @@ func (handler *TelnetHandler) sendError(errMsg string) {
 }
 
 func (handler *TelnetHandler) sendToWebSocket(message WebSocketMessage) {
-	handler.mu.Lock()
-	defer handler.mu.Unlock()
+	if message.Data != "" {
+		handler.dataMu.Lock()
+		defer handler.dataMu.Unlock()
 
-	if handler.websocketConn != nil && message.Data != "" {
-		handler.websocketConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-		jsonMsg, err := json.Marshal(message)
-		if err != nil {
-			log.Printf("Error marshaling message: %v", err)
-			return
-		}
-		err = handler.websocketConn.WriteMessage(websocket.TextMessage, jsonMsg)
-		if err != nil {
-			log.Printf("Error sending message to WebSocket: %v", err)
-			handler.reconnectWebSocket("data")
+		if handler.websocketConn != nil {
+			handler.websocketConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			jsonMsg, err := json.Marshal(message)
+			if err != nil {
+				log.Printf("Error marshaling message: %v", err)
+				return
+			}
+			err = handler.websocketConn.WriteMessage(websocket.TextMessage, jsonMsg)
+			if err != nil {
+				log.Printf("Error sending message to WebSocket: %v", err)
+				handler.reconnectWebSocket("data")
+			}
 		}
 	} else if message.Error != "" {
 		handler.sendError(message.Error)
@@ -113,9 +116,9 @@ func (handler *TelnetHandler) reconnectWebSocket(connType string) {
 			handler.logsConn.Close()
 		}
 		for i := 0; i < 3; i++ {
-			handler.logsConn, err = ConnectWebSocket(channelName + "/logs")
+			handler.logsConn, err = ConnectWebSocket(channelName + "-logs")
 			if err == nil {
-				log.Printf("Successfully reconnected to logs WebSocket channel: %s/logs", channelName)
+				log.Printf("Successfully reconnected to logs WebSocket channel: %s-logs", channelName)
 				break
 			}
 			log.Printf("Failed to reconnect to logs WebSocket, attempt %d: %v", i+1, err)
@@ -203,20 +206,21 @@ func (handler *TelnetHandler) Stop() {
 	close(handler.stopSignal)
 	handler.wg.Wait()
 
-	handler.mu.Lock()
-	defer handler.mu.Unlock()
-
+	handler.dataMu.Lock()
 	if handler.websocketConn != nil {
 		handler.websocketConn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 		handler.websocketConn.Close()
 		log.Println("WebSocket connection closed.")
 	}
+	handler.dataMu.Unlock()
 
+	handler.logMu.Lock()
 	if handler.logsConn != nil {
 		handler.logsConn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 		handler.logsConn.Close()
 		log.Println("Logs WebSocket connection closed.")
 	}
+	handler.logMu.Unlock()
 
 	log.Println("Service stopped successfully.")
 }
@@ -251,6 +255,7 @@ func main() {
 	handler.Start()
 
 	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt)
 	<-stop
 	handler.Stop()
 }
