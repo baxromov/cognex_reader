@@ -14,16 +14,14 @@ import (
 
 const websocketServerURL = "wss://laundirs-supply-chain-websocket.azurewebsites.net"
 
-var (
-	retryInterval = 5 * time.Second
-)
+var retryInterval = 5 * time.Second
 
 // TelnetHandler manages communication between WebSocket and Telnet
 type TelnetHandler struct {
 	telnetAddress   string
 	websocketConn   *websocket.Conn
 	stopSignal      chan bool
-	telnetConnected bool // Track if Telnet is actively connected
+	telnetConnected bool // Tracks the Telnet connection status
 	wg              sync.WaitGroup
 }
 
@@ -39,41 +37,47 @@ func ConnectWebSocket(channel string) (*websocket.Conn, error) {
 	return conn, nil
 }
 
-// handleTelnetConnections maintains Telnet connection and data forwarding
+// handleTelnetConnections maintains Telnet connection and forwards data
 func (handler *TelnetHandler) handleTelnetConnections() {
 	for {
 		select {
 		case <-handler.stopSignal:
-			log.Println("Stopping Telnet connection retries...")
+			log.Println("Stopping Telnet connection retries.")
 			return
 		default:
 			// Try connecting to Telnet
 			telnetConn, err := net.Dial("tcp", handler.telnetAddress)
 			if err != nil {
-				log.Printf("Error connecting to Telnet server: %v. Retrying in %v...", err, retryInterval)
+				log.Printf("Telnet connection error: %v. Retrying in %v...", err, retryInterval)
+
+				// Inform WebSocket channel of the Telnet connection issue
+				handler.sendToWebSocket("Telnet connection lost. Retrying...\n")
+
 				time.Sleep(retryInterval)
 				continue
 			}
 
-			// If connected successfully, start communication
-			log.Println("Connected to Telnet server. Forwarding data...")
+			// Mark Telnet connection as active
 			handler.telnetConnected = true
+			log.Println("Connected to Telnet server. Forwarding data...")
+
+			// Forward Telnet data to WebSocket
 			handler.forwardTelnetData(telnetConn)
 
-			// If Telnet communication ends, reset status
+			// Handle connection loss
 			telnetConn.Close()
 			handler.telnetConnected = false
-			log.Println("Telnet connection lost. Retrying...")
+			log.Println("Telnet connection closed. Retrying...")
 		}
 	}
 }
 
-// forwardTelnetData sends & receives data between WebSocket and Telnet
+// forwardTelnetData handles data exchange between WebSocket and Telnet
 func (handler *TelnetHandler) forwardTelnetData(conn net.Conn) {
 	reader := bufio.NewReader(conn)
 	done := make(chan bool)
 
-	// Start Telnet -> WebSocket forwarding
+	// Start Telnet → WebSocket forwarding
 	handler.wg.Add(1)
 	go func() {
 		defer handler.wg.Done()
@@ -81,16 +85,16 @@ func (handler *TelnetHandler) forwardTelnetData(conn net.Conn) {
 		for {
 			line, err := reader.ReadString('\n')
 			if err != nil {
-				log.Printf("Telnet connection closed: %v", err)
-				done <- true
+				log.Printf("Telnet connection error: %v", err)
+				handler.sendToWebSocket("Telnet connection lost: " + err.Error() + "\n")
+				done <- true // Signal connection loss
 				return
 			}
 
-			log.Printf("Telnet -> WebSocket: %s", line)
+			log.Printf("Telnet → WebSocket: %s", line)
 
-			// Forward Telnet response to WebSocket
-			err = handler.websocketConn.WriteMessage(websocket.TextMessage, []byte(line))
-			if err != nil {
+			// Forward Telnet data to WebSocket
+			if err := handler.websocketConn.WriteMessage(websocket.TextMessage, []byte(line)); err != nil {
 				log.Printf("Error forwarding to WebSocket: %v", err)
 				done <- true
 				return
@@ -98,7 +102,7 @@ func (handler *TelnetHandler) forwardTelnetData(conn net.Conn) {
 		}
 	}()
 
-	// Handle WebSocket -> Telnet commands
+	// Handle WebSocket → Telnet forwarding
 	handler.wg.Add(1)
 	go func() {
 		defer handler.wg.Done()
@@ -106,7 +110,7 @@ func (handler *TelnetHandler) forwardTelnetData(conn net.Conn) {
 		for {
 			select {
 			case <-handler.stopSignal:
-				log.Println("Stopping WebSocket -> Telnet forwarding...")
+				log.Println("Stopping WebSocket → Telnet forwarding.")
 				conn.Close()
 				return
 			case <-done:
@@ -114,16 +118,19 @@ func (handler *TelnetHandler) forwardTelnetData(conn net.Conn) {
 			default:
 				_, message, err := handler.websocketConn.ReadMessage()
 				if err != nil {
-					log.Printf("Error reading from WebSocket: %v. Closing Telnet connection.", err)
+					log.Printf("WebSocket read error: %v", err)
+					handler.sendToWebSocket("WebSocket error: " + err.Error() + "\n")
 					done <- true
 					return
 				}
 
-				// Forward WebSocket commands to Telnet server
-				log.Printf("WebSocket -> Telnet: %s", string(message))
+				log.Printf("WebSocket → Telnet: %s", message)
+
+				// Write WebSocket command to Telnet
 				_, err = conn.Write(append(message, '\n'))
 				if err != nil {
-					log.Printf("Error writing to Telnet: %v. Closing connection.", err)
+					log.Printf("Error sending to Telnet: %v", err)
+					handler.sendToWebSocket("Failed to send command to Telnet: " + err.Error() + "\n")
 					done <- true
 					return
 				}
@@ -131,16 +138,16 @@ func (handler *TelnetHandler) forwardTelnetData(conn net.Conn) {
 		}
 	}()
 
-	// Wait until connection is closed or stop signal received
+	// Wait for connection closure or stop signal
 	<-done
 	close(done)
 }
 
-// Start begins the WebSocket -> Telnet communication workflow
+// Start begins Telnet/WebSocket communication
 func (handler *TelnetHandler) Start() {
 	handler.stopSignal = make(chan bool)
 
-	// Launch Telnet connection handling in the background
+	// Launch Telnet handler goroutine
 	handler.wg.Add(1)
 	go func() {
 		defer handler.wg.Done()
@@ -148,12 +155,24 @@ func (handler *TelnetHandler) Start() {
 	}()
 }
 
-// Stop terminates communication and cleans up resources
+// Stop terminates the WebSocket <-> Telnet communication
 func (handler *TelnetHandler) Stop() {
 	close(handler.stopSignal)
 	handler.wg.Wait()
-	_ = handler.websocketConn.Close()
+	if handler.websocketConn != nil {
+		_ = handler.websocketConn.Close()
+	}
 	log.Println("Service stopped successfully.")
+}
+
+// sendToWebSocket sends a message to the WebSocket client
+func (handler *TelnetHandler) sendToWebSocket(message string) {
+	if handler.websocketConn != nil {
+		err := handler.websocketConn.WriteMessage(websocket.TextMessage, []byte(message))
+		if err != nil {
+			log.Printf("Failed to send message to WebSocket: %v", err)
+		}
+	}
 }
 
 func main() {
@@ -162,21 +181,20 @@ func main() {
 	}
 
 	telnetAddress := os.Args[1]
-	channelName := strings.ReplaceAll(telnetAddress, ":", "-") // Replace ":" with "-" for channel name
+	channelName := strings.ReplaceAll(telnetAddress, ":", "-") // Replace ":" with "-" for WebSocket channel name
 
-	// Connect to WebSocket channel
+	// Connect to WebSocket server
 	websocketConn, err := ConnectWebSocket(channelName)
 	if err != nil {
 		log.Fatalf("Failed to connect to WebSocket server: %v", err)
 	}
-	log.Printf("Successfully connected to WebSocket channel: %s", channelName)
+	log.Printf("Connected to WebSocket channel: %s", channelName)
 
-	// Initialize and start service
+	// Create and start Telnet handler
 	handler := &TelnetHandler{
 		telnetAddress: telnetAddress,
 		websocketConn: websocketConn,
 	}
-
 	handler.Start()
 
 	// Graceful shutdown
