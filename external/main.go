@@ -235,11 +235,11 @@ func main() {
 	}
 	log.Printf("Connected to WebSocket channel: %s", channelName)
 
-	logsConn, err := ConnectWebSocket(channelName + "/logs")
+	logsConn, err := ConnectWebSocket(channelName + "-logs")
 	if err != nil {
 		log.Printf("Failed to connect to logs WebSocket: %v", err)
 	} else {
-		log.Printf("Connected to logs WebSocket channel: %s/logs", channelName)
+		log.Printf("Connected to logs WebSocket channel: %s-logs", channelName)
 	}
 
 	handler := &TelnetHandler{
