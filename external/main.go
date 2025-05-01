@@ -52,6 +52,9 @@ func ConnectWebSocket(channel string) (*websocket.Conn, error) {
 }
 
 func (handler *TelnetHandler) sendError(errMsg string) {
+	handler.mu.Lock()
+	defer handler.mu.Unlock()
+
 	if handler.logsConn != nil {
 		handler.logsConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 		jsonMsg, err := json.Marshal(WebSocketMessage{Error: errMsg})
@@ -62,6 +65,7 @@ func (handler *TelnetHandler) sendError(errMsg string) {
 		err = handler.logsConn.WriteMessage(websocket.TextMessage, jsonMsg)
 		if err != nil {
 			log.Printf("Error sending error message: %v", err)
+			handler.reconnectWebSocket("logs")
 		}
 	}
 }
@@ -80,9 +84,43 @@ func (handler *TelnetHandler) sendToWebSocket(message WebSocketMessage) {
 		err = handler.websocketConn.WriteMessage(websocket.TextMessage, jsonMsg)
 		if err != nil {
 			log.Printf("Error sending message to WebSocket: %v", err)
+			handler.reconnectWebSocket("data")
 		}
 	} else if message.Error != "" {
 		handler.sendError(message.Error)
+	}
+}
+
+func (handler *TelnetHandler) reconnectWebSocket(connType string) {
+	var err error
+	channelName := strings.ReplaceAll(handler.telnetAddress, ":", "-")
+
+	if connType == "data" {
+		if handler.websocketConn != nil {
+			handler.websocketConn.Close()
+		}
+		for i := 0; i < 3; i++ {
+			handler.websocketConn, err = ConnectWebSocket(channelName)
+			if err == nil {
+				log.Printf("Successfully reconnected to WebSocket channel: %s", channelName)
+				break
+			}
+			log.Printf("Failed to reconnect to WebSocket, attempt %d: %v", i+1, err)
+			time.Sleep(time.Second * 2)
+		}
+	} else if connType == "logs" {
+		if handler.logsConn != nil {
+			handler.logsConn.Close()
+		}
+		for i := 0; i < 3; i++ {
+			handler.logsConn, err = ConnectWebSocket(channelName + "/logs")
+			if err == nil {
+				log.Printf("Successfully reconnected to logs WebSocket channel: %s/logs", channelName)
+				break
+			}
+			log.Printf("Failed to reconnect to logs WebSocket, attempt %d: %v", i+1, err)
+			time.Sleep(time.Second * 2)
+		}
 	}
 }
 
