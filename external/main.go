@@ -127,6 +127,35 @@ func (handler *TelnetHandler) reconnectWebSocket(connType string) {
 	}
 }
 
+func (handler *TelnetHandler) startHeartbeat() {
+	handler.wg.Add(1)
+	go func() {
+		defer handler.wg.Done()
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-handler.stopSignal:
+				log.Println("Heartbeat stopped.")
+				return
+			case <-ticker.C:
+				handler.dataMu.Lock()
+				if handler.websocketConn != nil {
+					err := handler.websocketConn.WriteMessage(websocket.TextMessage, []byte(`{"data":"heartbeat"}`))
+					if err != nil {
+						log.Printf("Heartbeat failed: %v", err)
+						handler.reconnectWebSocket("data")
+					} else {
+						log.Println("Sent heartbeat to WebSocket.")
+					}
+				}
+				handler.dataMu.Unlock()
+			}
+		}
+	}()
+}
+
 func (handler *TelnetHandler) Start() {
 	handler.stopSignal = make(chan struct{})
 
@@ -135,6 +164,8 @@ func (handler *TelnetHandler) Start() {
 		defer handler.wg.Done()
 		handler.handleTelnetConnections()
 	}()
+
+	handler.startHeartbeat()
 }
 
 func (handler *TelnetHandler) handleTelnetConnections() {
