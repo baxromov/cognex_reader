@@ -20,6 +20,7 @@ var (
 	retryInterval = 5 * time.Second
 )
 
+// TelnetChannel represents a Telnet connection and associated WebSocket clients.
 type TelnetChannel struct {
 	host         string
 	clients      map[*websocket.Conn]bool
@@ -93,10 +94,19 @@ func websocketHandler(w http.ResponseWriter, r *http.Request) {
 			host:        host,
 			clients:     make(map[*websocket.Conn]bool),
 			commandChan: make(chan string),
-			stopSignal:  make(chan bool),
+			stopSignal:  make(chan bool), // Initialize stopSignal for the first time
 		}
 		channels[channelName] = channel
 		go handleTelnetConnection(channel, channelName)
+	} else {
+		// If stopSignal is closed, reinitialize it
+		select {
+		case <-channel.stopSignal:
+			channel.stopSignal = make(chan bool)
+			go handleTelnetConnection(channel, channelName)
+		default:
+			// No action needed if stopSignal is still open
+		}
 	}
 	mu.Unlock()
 
@@ -137,7 +147,7 @@ func handleTelnetConnection(tc *TelnetChannel, channelName string) {
 		if err != nil {
 			select {
 			case <-tc.stopSignal:
-				log.Printf("Stopping Telnet handler for channel '%s'.", channelName)
+				log.Printf("Stopping Telnet handler for channel '%s' (stop signal received).", channelName)
 				return
 			default:
 				log.Printf("Failed to connect to Telnet server for channel '%s': %v. Retrying in %v...", channelName, err, retryInterval)
@@ -174,7 +184,8 @@ func handleTelnetConnection(tc *TelnetChannel, channelName string) {
 				case command := <-tc.commandChan:
 					_, err := fmt.Fprint(conn, command+"\n")
 					if err != nil {
-						log.Printf("Error sending command to Telnet (channel '%s'): %v", channelName, err)
+						log.Printf("Error sending command to Telnet (channel '%s'): %v. Closing connection.", channelName, err)
+						conn.Close()
 						return
 					}
 				}
@@ -184,7 +195,7 @@ func handleTelnetConnection(tc *TelnetChannel, channelName string) {
 		select {
 		case <-done:
 			conn.Close()
-			log.Printf("Telnet connection for channel '%s' lost. Retrying...", channelName)
+			log.Printf("Telnet connection for channel '%s' lost. Retrying in %v...", channelName, retryInterval)
 			time.Sleep(retryInterval)
 		case <-tc.stopSignal:
 			log.Printf("Telnet handler for channel '%s' stopped by signal.", channelName)
@@ -196,8 +207,8 @@ func handleTelnetConnection(tc *TelnetChannel, channelName string) {
 
 func main() {
 	http.HandleFunc("/", websocketHandler)
-	log.Println("WebSocket server running on ws://0.0.0.0:8765/{channelname}?host=<telnet_ip:port>")
-	if err := http.ListenAndServe(":8765", nil); err != nil {
+	log.Println("WebSocket server running on ws://0.0.0.0:5001/{channelname}?host=<telnet_ip:port>")
+	if err := http.ListenAndServe(":5001", nil); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }

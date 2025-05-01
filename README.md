@@ -84,37 +84,37 @@ Here’s an example of how to connect and use the WebSocket-Telnet Bridge with *
 
 ### Using JavaScript WebSocket Client
 This script demonstrates how to establish a WebSocket connection and exchange data with the WebSocket-Telnet Bridge.
-
 ```javascript
-// Connect to the WebSocket server
-const socket = new WebSocket('ws://example.com/ws');
+
+
+// Connect to the WebSocket server with channel name and telnet host
+const socket = new WebSocket('ws://0.0.0.0:5001/mychannel?host=telnet.example.com:23');
 
 // Event: Connection opened
 socket.onopen = () => {
-    console.log('WebSocket connected');
+console.log('Connected to telnet channel');
 
     // Example: Send command to the Telnet server
-    const command = JSON.stringify({ action: 'send', data: 'ls -al' });
-    socket.send(command);
+    socket.send('ls -al');
+
 };
 
 // Event: Receive message from the server
 socket.onmessage = (event) => {
-    console.log('Message from server:', event.data);
+console.log('Telnet output:', event.data);
 };
 
 // Event: Handle errors
 socket.onerror = (error) => {
-    console.error('WebSocket error:', error);
+console.error('WebSocket error:', error);
 };
 
 // Event: Connection closed
 socket.onclose = (event) => {
-    console.log('WebSocket connection closed:', event.reason);
+console.log('Channel connection closed:', event.reason);
 };
+
 ```
-
-
 ---
 
 ### Using `curl` Command
@@ -122,8 +122,8 @@ To test the WebSocket-Telnet Bridge using `curl`, you can establish a WebSocket 
 
 ```shell script
 curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" -H "Host: example.com" \
--H "Origin: http://example.com" \
---http1.1 ws://example.com/ws
+-H "Origin: http://0.0.0.0:5001" \
+--http1.1 ws://0.0.0.0:5001
 ```
 
 
