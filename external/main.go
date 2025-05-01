@@ -49,22 +49,6 @@ func ConnectWebSocket(channel string) (*websocket.Conn, error) {
 
 	conn.SetReadLimit(512)
 	conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-
-	conn.SetPongHandler(func(string) error {
-		return conn.SetReadDeadline(time.Now().Add(30 * time.Second))
-	})
-	go func(c *websocket.Conn) {
-		ticker := time.NewTicker(20 * time.Second)
-		defer ticker.Stop()
-		for {
-			<-ticker.C
-			c.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			if err := c.WriteMessage(websocket.PingMessage, nil); err != nil {
-				log.Printf("Ping error: %v", err)
-				return
-			}
-		}
-	}(conn)
 	return conn, nil
 }
 
