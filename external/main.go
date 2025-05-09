@@ -24,13 +24,14 @@ type WebSocketMessage struct {
 }
 
 type TelnetHandler struct {
-	telnetAddress string
-	websocketConn *websocket.Conn
-	logsConn      *websocket.Conn
-	stopSignal    chan struct{}
-	wg            sync.WaitGroup
-	dataMu        sync.Mutex
-	logMu         sync.Mutex
+	telnetAddress   string
+	websocketConn   *websocket.Conn
+	logsConn        *websocket.Conn
+	stopSignal      chan struct{}
+	telnetConnected bool
+	wg              sync.WaitGroup
+	dataMu          sync.Mutex
+	logMu           sync.Mutex
 }
 
 func ConnectWebSocket(channel string) (*websocket.Conn, error) {
@@ -51,25 +52,45 @@ func ConnectWebSocket(channel string) (*websocket.Conn, error) {
 	return conn, nil
 }
 
-func (handler *TelnetHandler) sendToWebSocket(message WebSocketMessage) {
-	jsonMsg, err := json.Marshal(message)
-	if err != nil {
-		log.Printf("Failed to marshal WebSocketMessage: %v", err)
-		return
-	}
+func (handler *TelnetHandler) sendError(errMsg string) {
+	handler.logMu.Lock()
+	defer handler.logMu.Unlock()
 
-	handler.dataMu.Lock()
-	defer handler.dataMu.Unlock()
-
-	if handler.websocketConn != nil {
-		handler.websocketConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-		err := handler.websocketConn.WriteMessage(websocket.TextMessage, jsonMsg)
+	if handler.logsConn != nil {
+		handler.logsConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		jsonMsg, err := json.Marshal(WebSocketMessage{Error: errMsg})
 		if err != nil {
-			log.Printf("WebSocket write failed: %v", err)
-			handler.reconnectWebSocket("data")
+			log.Printf("Error marshaling error message: %v", err)
+			return
 		}
-	} else {
-		log.Println("WebSocket is disconnected. Telnet data continues to be processed.")
+		err = handler.logsConn.WriteMessage(websocket.TextMessage, jsonMsg)
+		if err != nil {
+			log.Printf("Error sending error message: %v", err)
+			handler.reconnectWebSocket("logs")
+		}
+	}
+}
+
+func (handler *TelnetHandler) sendToWebSocket(message WebSocketMessage) {
+	if message.Data != "" {
+		handler.dataMu.Lock()
+		defer handler.dataMu.Unlock()
+
+		if handler.websocketConn != nil {
+			handler.websocketConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			jsonMsg, err := json.Marshal(message)
+			if err != nil {
+				log.Printf("Error marshaling message: %v", err)
+				return
+			}
+			err = handler.websocketConn.WriteMessage(websocket.TextMessage, jsonMsg)
+			if err != nil {
+				log.Printf("Error sending message to WebSocket: %v", err)
+				handler.reconnectWebSocket("data")
+			}
+		}
+	} else if message.Error != "" {
+		handler.sendError(message.Error)
 	}
 }
 
@@ -77,34 +98,74 @@ func (handler *TelnetHandler) reconnectWebSocket(connType string) {
 	var err error
 	channelName := strings.ReplaceAll(handler.telnetAddress, ":", "-")
 
-	for attempts := 0; attempts < 3; attempts++ {
-		if connType == "data" {
-			handler.dataMu.Lock()
-			if handler.websocketConn != nil {
-				handler.websocketConn.Close()
-			}
+	if connType == "data" {
+		if handler.websocketConn != nil {
+			handler.websocketConn.Close()
+		}
+		for i := 0; i < 3; i++ {
 			handler.websocketConn, err = ConnectWebSocket(channelName)
-			handler.dataMu.Unlock()
-
-		} else if connType == "logs" {
-			handler.logMu.Lock()
-			if handler.logsConn != nil {
-				handler.logsConn.Close()
+			if err == nil {
+				log.Printf("Successfully reconnected to WebSocket channel: %s", channelName)
+				break
 			}
+			log.Printf("Failed to reconnect to WebSocket, attempt %d: %v", i+1, err)
+			time.Sleep(time.Second * 2)
+		}
+	} else if connType == "logs" {
+		if handler.logsConn != nil {
+			handler.logsConn.Close()
+		}
+		for i := 0; i < 3; i++ {
 			handler.logsConn, err = ConnectWebSocket(channelName + "-logs")
-			handler.logMu.Unlock()
+			if err == nil {
+				log.Printf("Successfully reconnected to logs WebSocket channel: %s-logs", channelName)
+				break
+			}
+			log.Printf("Failed to reconnect to logs WebSocket, attempt %d: %v", i+1, err)
+			time.Sleep(time.Second * 2)
 		}
-
-		if err == nil {
-			log.Printf("Reconnected to WebSocket [%s] successfully", connType)
-			return
-		}
-
-		log.Printf("WebSocket reconnection attempt [%s] failed: %v. Retrying in 2 seconds...", connType, err)
-		time.Sleep(2 * time.Second)
 	}
+}
 
-	log.Printf("Failed to reconnect to WebSocket [%s] after 3 attempts.", connType)
+func (handler *TelnetHandler) startHeartbeat() {
+	handler.wg.Add(1)
+	go func() {
+		defer handler.wg.Done()
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-handler.stopSignal:
+				log.Println("Heartbeat stopped.")
+				return
+			case <-ticker.C:
+				handler.dataMu.Lock()
+				if handler.websocketConn != nil {
+					err := handler.websocketConn.WriteMessage(websocket.TextMessage, []byte(`{"data":"heartbeat"}`))
+					if err != nil {
+						log.Printf("Heartbeat failed: %v", err)
+						handler.reconnectWebSocket("data")
+					} else {
+						log.Println("Sent heartbeat to WebSocket.")
+					}
+				}
+				handler.dataMu.Unlock()
+			}
+		}
+	}()
+}
+
+func (handler *TelnetHandler) Start() {
+	handler.stopSignal = make(chan struct{})
+
+	handler.wg.Add(1)
+	go func() {
+		defer handler.wg.Done()
+		handler.handleTelnetConnections()
+	}()
+
+	handler.startHeartbeat()
 }
 
 func (handler *TelnetHandler) handleTelnetConnections() {
@@ -123,10 +184,15 @@ func (handler *TelnetHandler) handleTelnetConnections() {
 			}
 
 			log.Println("Connected to Telnet server. Forwarding data...")
+			handler.telnetConnected = true
+
 			handler.forwardTelnetData(conn)
+
 			conn.Close()
+			handler.telnetConnected = false
 			log.Println("Telnet connection closed. Retrying...")
-			time.Sleep(1 * time.Second)
+
+			time.Sleep(time.Second)
 		}
 	}
 }
@@ -142,37 +208,29 @@ func (handler *TelnetHandler) forwardTelnetData(conn net.Conn) {
 
 		for {
 			if err := conn.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
-				log.Printf("Failed to set read deadline on Telnet connection: %v", err)
-				handler.sendToWebSocket(WebSocketMessage{Error: "Telnet timeout"})
+				log.Printf("Failed to set read deadline: %v", err)
+				handler.sendToWebSocket(WebSocketMessage{Error: "Failed to set read deadline"})
 				return
 			}
 
 			line, err := reader.ReadString('\n')
 			if err != nil {
-				log.Printf("Error reading from Telnet: %v", err)
-				handler.sendToWebSocket(WebSocketMessage{Error: "Telnet read error: " + err.Error()})
+				if !strings.Contains(err.Error(), "use of closed network connection") {
+					log.Printf("Telnet read error: %v", err)
+					handler.sendToWebSocket(WebSocketMessage{Error: "Telnet connection error: " + err.Error()})
+				}
 				return
 			}
 
 			line = strings.TrimSpace(line)
 			if line != "" {
-				log.Printf("Telnet -> WebSocket Data: %s", line)
+				log.Printf("Telnet -> WebSocket: %s", line)
 				handler.sendToWebSocket(WebSocketMessage{Data: line})
 			}
 		}
 	}()
 
 	<-done
-}
-
-func (handler *TelnetHandler) Start() {
-	handler.stopSignal = make(chan struct{})
-
-	handler.wg.Add(1)
-	go func() {
-		defer handler.wg.Done()
-		handler.handleTelnetConnections()
-	}()
 }
 
 func (handler *TelnetHandler) Stop() {
